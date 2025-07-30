@@ -1,0 +1,337 @@
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/plain"
+)
+
+// Identity represents the identity structure.
+type Identity struct {
+	Public []string `json:"public"`
+}
+
+// Header represents the header structure.
+type Header struct {
+	Version        string   `json:"version"`
+	Timestamp      string   `json:"timestamp"`
+	OrgService     string   `json:"orgService"`
+	Scope          string   `json:"scope"`
+	From           string   `json:"from"`
+	Channel        string   `json:"channel"`
+	Agent          string   `json:"agent"`
+	Broker         string   `json:"broker"`
+	UseCase        string   `json:"useCase"`
+	UseCaseStep    string   `json:"useCaseStep"`
+	UseCaseAge     int      `json:"useCaseAge"`
+	FunctionName   string   `json:"functionName"`
+	MessageType    string   `json:"messageType"`
+	Session        string   `json:"session"`
+	Transaction    string   `json:"transaction"`
+	Communication  string   `json:"communication"`
+	GroupTags      []string `json:"groupTags"`
+	Identity       Identity `json:"identity"`
+	ReturnedError  string   `json:"returnedError"`
+	InitUri        string   `json:"initUri"`
+	InitMethod     string   `json:"initMethod"`
+	TmfSpec        string   `json:"tmfSpec"`
+	BaseApiVersion string   `json:"baseApiVersion"`
+	SchemaVersion  string   `json:"schemaVersion"`
+}
+
+// Item represents an item in the body.
+type Item struct {
+	ItemNo                    string `json:"itemNo"`
+	SourceSystemName          string `json:"sourceSystemName"`
+	SourceSystem              string `json:"sourceSystem"`
+	CustomerReference         string `json:"customerReference"`
+	SalesOrderNumber          string `json:"salesOrderNumber"`
+	StockTransportOrderNumber string `json:"stockTransportOrderNumber"`
+}
+
+// Body represents the body structure.
+type Body struct {
+	HeaderText            string `json:"headerText"`
+	FreightOrderNumber    string `json:"freightOrderNumber"`
+	CarrierTrackingNumber string `json:"carrierTrackingNumber"`
+	CarrierName           string `json:"carrierName"`
+	Carrier               string `json:"carrier"`
+	EventCode             string `json:"eventCode"`
+	EventDescription      string `json:"eventDescription"`
+	ActualDate            string `json:"actualDate"`
+	Item                  []Item `json:"item"`
+	MessageID             string `json:"messageId"`
+	PartnerName           string `json:"partnerName"`
+	PartnerMessageID      string `json:"partnerMessageId"`
+}
+
+// TrackingStatusUpdated represents the main message structure.
+type TrackingStatusUpdated struct {
+	Header Header `json:"header"`
+	Body   Body   `json:"body"`
+}
+
+func main() {
+
+	trackingNos := []string{
+		"PV19345165232583",
+		// "PV19345163605029",
+		// "PV19345163440245",
+		// "PV19345162331206",
+		// "PV19345162225274",
+		// "PV19345161617859",
+		// "PV11174101051547",
+		// "PV19345175119418",
+		// "PV19345151624794",
+		// "PV47443141111943",
+		// "PV47443113805136",
+		// "PV19645113315588",
+		// "PV47443102115895",
+		// "PV47443102039961",
+		// "PV47443101953945",
+		// "PV47443101807723",
+		// "PV47443101751690",
+		// "PV47443101732137",
+		// "PV47443161828159",
+		// "PV47443145844526",
+		// "PV33678090521041",
+		// "PV33678171508504",
+		// "PV19645155555180",
+		// "PV19645155534303",
+		// "PV19645155522757",
+		// "PV33678153850539",
+		// "PV19345142101418",
+		// "PV19345142025642",
+		// "PV19645140316747",
+		// "PV47443105337178",
+		// "PV47443105154732",
+		// "PV33674173341264",
+		// "PV33674173213106",
+		// "PV19746172812424",
+		// "PV19746172718508",
+		// "PV19746172650066",
+		// "PV13654171642167",
+		// "PV47443151230893",
+		// "PV47443142213321",
+		// "PV47443142103093",
+		// "PV47443141942322",
+		// "PV47443140447137",
+		// "PV47443140353450",
+		// "PV47443135020374",
+		// "PV47443133302810",
+		// "PV47443132700954",
+		// "PV47443120239059",
+		// "PV47443120009484",
+		// "PV19345115410039",
+		// "PV19345115333350",
+		// "PV47443114013649",
+		// "PV47443113900310",
+		// "PV19345112851873",
+		// "PV47443111321415",
+		// "PV47443105813052",
+		// "PV47443105534396",
+		// "PV19345105220166",
+		// "PV19345091058137",
+		// "PV19345150945004",
+		// "PV19345150510315",
+		// "PV19345150450051",
+		// "PV19345150308156",
+		// "PV19345145637381",
+		// "PV19345144758028",
+		// "PV19345144617011",
+		// "PV19345144538750",
+		// "PV19345144054017",
+		// "PV19345143328267",
+		// "PV19345143320537",
+		// "PV19345142554520",
+		// "PV19345142326745",
+		// "PV19345142205407",
+		// "PV19345141715807",
+		// "PV19345141651871",
+		// "PV19345141440107",
+		// "PV19345141339017",
+		// "PV19345141317805",
+		// "PV19345140416680",
+		// "PV19345140054445",
+		// "PV19345135843233",
+		// "PV19345135720146",
+		// "PV19345134817623",
+		// "PV19345134548540",
+		// "PV19345134517965",
+		// "PV19345134416019",
+		// "PV19345133754986",
+		// "PV33678111247478",
+		// "PV33678110755773",
+		// "PV86685103357188",
+		// "PV19655164443299",
+		// "PV19655164125479",
+		// "PV19655164031901",
+		// "PV47443161455870",
+		// "PV47443160632314",
+		// "PV33678155415993",
+		// "PV33678155146964",
+		// "PV47443174124060",
+		// "PV19645100801994",
+		// "PV33678144809846",
+		// "PV47443143903294",
+		// "PV33678125553162",
+		// "PV33678124252817",
+		// "PV33678123820572",
+		// "PV33678121647508",
+		// "PV33678114650845",
+		// "PV33678114600921",
+		// "PV47443111148837",
+		// "PV33678103302673",
+		// "PV33678103245241",
+		// "PV47443104807887",
+		// "PV47443103826154",
+		// "PV02828121050604",
+		// "PV19702173144053",
+		// "PV02828171856080",
+		// "PV02828170825465",
+		// "PV19702164929955",
+		// "PV19702164829732",
+		// "PV19702164328947",
+		// "PV02828103456175",
+		// "PV02828103333868",
+		// "PV02828095109609",
+		// "PV02828094639013",
+		// "PV19640151814891",
+		// "PV19640151741063",
+		// "PV99189153600431",
+		// "PV99189153546753",
+		// "PV19702172028437",
+		// "PV19702171837383",
+		// "PV19700170805656",
+		// "PV47443100044133",
+		// "PV47443130936940",
+		// "PV47443105134759",
+		// "PV47443104233261",
+		// "PV47443104204743",
+		// "PV19645145825474",
+		// "PV19645145818845",
+		// "PV19645145755817",
+		// "PV19645145737434",
+		// "PV19645145711711",
+		// "PV19645145645291",
+		// "PV19645145616400",
+		// "PV19645145553806",
+		// "PV19645145515369",
+		// "PV19645145451183",
+	}
+
+	brokerAddress := ""
+	topic := "sap.proxy.trackingStatusUpdated"
+	username := ""
+	password := ""
+	mechanism := plain.Mechanism{
+		Username: username,
+		Password: password,
+	}
+
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+		TLS: &tls.Config{
+			InsecureSkipVerify: true, // หรือ true ถ้าไม่มี CA cert
+		},
+		SASLMechanism: mechanism,
+	}
+
+	writer := kafka.NewWriter(kafka.WriterConfig{
+		Brokers: []string{brokerAddress},
+		Topic:   topic,
+		Dialer:  dialer,
+	})
+	defer writer.Close()
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	for i, v := range trackingNos {
+		wg.Add(1)
+		go func(i int, v string) {
+			defer wg.Done()
+			now := time.Now()
+			tid := fmt.Sprintf("TID-%s", uuid.New().String())
+
+			// Create a new message instance for each goroutine to avoid race conditions
+			msg := TrackingStatusUpdated{
+				Header: Header{
+					Version:        "1.0",
+					Timestamp:      time.Now().Format(time.RFC3339),
+					OrgService:     "example-service",
+					Scope:          "example-scope",
+					From:           "example-from",
+					Channel:        "example-channel",
+					Agent:          "example-agent",
+					Broker:         "example-broker",
+					UseCase:        "example-usecase",
+					UseCaseStep:    "example-step",
+					UseCaseAge:     1,
+					FunctionName:   "example-function",
+					MessageType:    "example-message-type",
+					Session:        tid,
+					Transaction:    tid,
+					Communication:  "example-communication",
+					GroupTags:      []string{"tag1", "tag2"},
+					Identity:       Identity{Public: []string{"public-key"}},
+					ReturnedError:  "",
+					InitUri:        "http://example.com/init",
+					InitMethod:     "POST",
+					TmfSpec:        "example-tmf-spec",
+					BaseApiVersion: "1.0",
+					SchemaVersion:  "1.0",
+				},
+				Body: Body{
+					HeaderText:            "Example Header Text",
+					FreightOrderNumber:    "FO123456",
+					CarrierTrackingNumber: "TNX123456",
+					CarrierName:           "Example Carrier",
+					Carrier:               "Example Carrier",
+					EventCode:             "Z_PICKUP",
+					EventDescription:      "Example Event Description",
+					ActualDate:            time.Now().Format(time.RFC3339),
+					Item: []Item{
+						{
+							ItemNo:                    "1",
+							SourceSystemName:          "Redeem (Privilege)",
+							SourceSystem:              "Example Source",
+							CustomerReference:         v,
+							SalesOrderNumber:          "SO123456",
+							StockTransportOrderNumber: "STO123456",
+						},
+					},
+					MessageID:        tid,
+					PartnerName:      "Example Partner",
+					PartnerMessageID: v,
+				},
+			}
+
+			jsonMessage, err := json.Marshal(msg)
+			if err != nil {
+				log.Printf("could not marshal message %d: %v", i, err)
+				return
+			}
+			err = writer.WriteMessages(ctx, kafka.Message{
+				Key:   []byte(fmt.Sprintf("Key-%d-%s", i, now.Format(time.RFC3339Nano))),
+				Value: jsonMessage,
+			})
+			if err != nil {
+				log.Printf("could not write message %d: %v", i, err)
+			} else {
+				log.Printf("sent: %s", string(jsonMessage))
+			}
+		}(i, v)
+	}
+
+	wg.Wait()
+	log.Println("All messages sent.")
+}
